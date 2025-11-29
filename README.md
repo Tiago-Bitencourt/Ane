@@ -1,10 +1,10 @@
-# Extrator de Dados PDF
+# Extrator de Dados PDF - Ane
 
-Uma aplicação web moderna para extrair dados estruturados de arquivos PDF usando OCR (Optical Character Recognition) e preencher automaticamente arquivos CSV com os dados extraídos.
+Ferramenta pessoal para extrair dados estruturados de arquivos PDF usando OCR (Optical Character Recognition) e preencher automaticamente arquivos CSV com os dados extraídos.
 
 ## 📋 Descrição
 
-Esta ferramenta permite extrair informações de tabelas em PDFs (especialmente PDFs escaneados ou baseados em imagens) usando tecnologia OCR e preencher automaticamente arquivos CSV com os dados encontrados. Ideal para digitalização de documentos e automação de processos de entrada de dados.
+Esta é uma ferramenta desenvolvida especificamente para uso pessoal, que permite extrair informações de tabelas em PDFs (especialmente PDFs escaneados ou baseados em imagens) usando tecnologia OCR e preencher automaticamente arquivos CSV com os dados encontrados.
 
 ## ✨ Funcionalidades
 
@@ -141,24 +141,13 @@ As seguintes bibliotecas são carregadas via CDN:
 - Requer conexão com internet para carregar as bibliotecas externas
 - Funciona melhor com PDFs que contêm tabelas bem formatadas
 
-## 🔧 Melhorias Futuras
+## 🔧 Observações Técnicas
 
-- [ ] Suporte para múltiplos idiomas de OCR
-- [ ] Exportação para outros formatos (Excel, JSON)
-- [ ] Histórico de processamentos
-- [ ] Validação de dados mais robusta
-- [ ] Suporte para upload de múltiplos arquivos
-- [ ] Cache de dados processados
+- O processamento é feito completamente no navegador (client-side)
+- Utiliza Tesseract.js para OCR em português
+- Funciona melhor com PDFs que contêm tabelas bem formatadas
 
-## 📄 Licença
+## 📄 Notas
 
-Este projeto está disponível para uso livre.
-
-## 👤 Autor
-
-Desenvolvido para facilitar a extração e processamento de dados de documentos PDF.
-
----
-
-**Nota**: Esta aplicação processa todos os dados localmente no navegador. Nenhum dado é enviado para servidores externos, garantindo privacidade e segurança.
+Este é um projeto pessoal desenvolvido para uso específico. A aplicação processa todos os dados localmente no navegador. Nenhum dado é enviado para servidores externos, garantindo privacidade e segurança.
 
