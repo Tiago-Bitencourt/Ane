@@ -1,0 +1,770 @@
+// ============================================================================
+// CONSTANTS - Single source of truth
+// ============================================================================
+const Constants = {
+  REGEX_PATTERNS: {
+    RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([MFN])\s*\]?\s*\|(\d+)?/,
+    NEW_RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([MFN])\s*\]?\s*\|/,
+    PAGE_SEPARATOR: /^---\s*Página/,
+    STANDALONE_NUMBER: /^\d+$/,
+    HAS_LETTERS: /[A-Za-z]/,
+    OCR_ARTIFACT: /^(ál|al)$/i,
+    NUMBER_WITH_DOTS: /^\d+\.\d+/,
+    NUMBER_WITH_SPACE: /^\d+\s+\d+/
+  },
+  CSV_COLUMNS: {
+    ID_NAMES: ['ID amost.', 'ID', 'Id', 'id', 'ID amostra', 'ID amostra.'],
+    HEADERS: ['#', 'ID', 'Sexo', 'Idade', 'Nome']
+  },
+  UI_MESSAGES: {
+    NO_DATA: 'Nenhum dado extraído',
+    CSV_SELECTED: 'Arquivo selecionado',
+    CSV_REQUIRED: 'Por favor, selecione um arquivo CSV.',
+    PDF_REQUIRED: 'Por favor, primeiro extraia os dados do PDF.',
+    ID_COLUMN_NOT_FOUND: 'Erro: Coluna de ID não encontrada no CSV. Procure por "ID amost." ou "ID".',
+    CSV_PROCESSED: 'CSV processado com sucesso!',
+    CSV_ERROR: 'Erro ao processar CSV:',
+    CSV_READ_ERROR: 'Erro ao ler o arquivo CSV.'
+  },
+  CONFIG: {
+    OCR_LANGUAGE: 'por',
+    OCR_SCALE: 2.0,
+    MAX_LOOKAHEAD: 30,
+    BACKUP_LOOKAHEAD: 25,
+    ID_DIGITS: 5
+  }
+};
+
+// ============================================================================
+// UTILITIES - Reusable helper functions
+// ============================================================================
+const Utils = {
+  extractLastNDigits(value, n = Constants.CONFIG.ID_DIGITS) {
+    const cleaned = String(value || '').replace(/[.\s/,]/g, '');
+    return cleaned.length >= n ? cleaned.slice(-n) : cleaned;
+  },
+
+  cleanName(name) {
+    if (!name) return '';
+    return name
+      .trim()
+      .replace(/\s+ál\s*$/i, '')
+      .replace(/^(ál|al)\s+/i, '')
+      .replace(/\s+\.\s*$/, '')
+      .replace(/\.$/, '')
+      .replace(/\s+\d+\s+\d+\.\d+.*$/, '')
+      .replace(/\s+\d+\s+\d+.*\|[MFN]\|.*$/, '')
+      .replace(/\s+\d{5,}.*$/, '')
+      .trim();
+  },
+
+  isOCRArtifact(text) {
+    return text.length <= 3 &&
+      !Constants.REGEX_PATTERNS.HAS_LETTERS.test(text) &&
+      /^[a-záéíóú]+$/.test(text);
+  },
+
+  isNewRecord(line) {
+    return Constants.REGEX_PATTERNS.NEW_RECORD.test(line);
+  },
+
+  isPageSeparator(line) {
+    return Constants.REGEX_PATTERNS.PAGE_SEPARATOR.test(line);
+  },
+
+  downloadFile(content, filename, mimeType = 'text/csv;charset=utf-8;') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+};
+
+// ============================================================================
+// PDF PROCESSOR - Single Responsibility: Process PDF files
+// ============================================================================
+class PDFProcessor {
+  constructor(outputElement) {
+    this.outputElement = outputElement;
+  }
+
+  async process(file) {
+    const url = URL.createObjectURL(file);
+    const pdf = await pdfjsLib.getDocument(url).promise;
+    const worker = await Tesseract.createWorker(Constants.CONFIG.OCR_LANGUAGE);
+
+    let allText = '';
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      this.updateProgress(pageNumber, pdf.numPages);
+      const pageText = await this.processPage(pdf, pageNumber, worker);
+      allText += `\n\n--- Página ${pageNumber} ---\n\n` + pageText;
+    }
+
+    await worker.terminate();
+    return allText;
+  }
+
+  async processPage(pdf, pageNumber, worker) {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: Constants.CONFIG.OCR_SCALE });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({ canvasContext: context, viewport }).promise;
+    const imageData = canvas.toDataURL('image/png');
+    const { data: { text } } = await worker.recognize(imageData);
+
+    return text;
+  }
+
+  updateProgress(pageNumber, totalPages) {
+    const progressPercent = Math.round((pageNumber / totalPages) * 100);
+    const existingLoader = this.outputElement.querySelector('.loader-container');
+    if (existingLoader) {
+      const titleElement = existingLoader.querySelector('.loader-title');
+      const subtitleElement = existingLoader.querySelector('.loader-subtitle');
+      const progressBar = existingLoader.querySelector('.progress-bar');
+      const progressText = existingLoader.querySelector('.progress-text');
+      if (titleElement) titleElement.textContent = `Processando página ${pageNumber} de ${totalPages}`;
+      if (subtitleElement) subtitleElement.textContent = 'Extraindo dados da tabela...';
+      if (progressBar) progressBar.style.width = `${progressPercent}%`;
+      if (progressText) progressText.textContent = `${progressPercent}% concluído`;
+    } else {
+      this.outputElement.innerHTML = `
+        <div class="container">
+          <div class="loader-container">
+            <i class="fas fa-file-pdf loader-icon"></i>
+            <div class="loader-title">Processando página ${pageNumber} de ${totalPages}</div>
+            <div class="loader-subtitle">Extraindo dados da tabela...</div>
+            <div class="progress-container">
+              <div class="progress-bar-wrapper">
+                <div class="progress-bar" style="width: ${progressPercent}%"></div>
+              </div>
+              <div class="progress-text">${progressPercent}% concluído</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  showInitialLoader() {
+    this.outputElement.innerHTML = `
+      <div class="container">
+        <div class="loader-container">
+          <i class="fas fa-file-pdf loader-icon"></i>
+          <div class="loader-title">Processando PDF com OCR...</div>
+          <div class="loader-subtitle">Isso pode levar alguns segundos. Por favor, aguarde.</div>
+          <div class="progress-container">
+            <div class="progress-bar-wrapper">
+              <div class="progress-bar" style="width: 0%"></div>
+            </div>
+            <div class="progress-text">0% concluído</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
+// DATA EXTRACTOR - Single Responsibility: Extract structured data from text
+// ============================================================================
+class DataExtractor {
+  extract(text) {
+    const lines = this.normalizeLines(text);
+    const results = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const match = lines[i].match(Constants.REGEX_PATTERNS.RECORD);
+
+      if (match) {
+        const rowData = this.createRowData(match);
+        const nextIndex = this.extractAgeAndName(lines, i, rowData);
+
+        if (rowData.id && rowData.sex) {
+          rowData.age = rowData.age || 'N/A';
+          rowData.name = rowData.name || 'N/A';
+          results.push(rowData);
+        }
+
+        i = nextIndex;
+      } else {
+        i++;
+      }
+    }
+
+    return { rows: results.sort((a, b) => parseInt(a.sequence) - parseInt(b.sequence)) };
+  }
+
+  normalizeLines(text) {
+    return text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  }
+
+  createRowData(match) {
+    return {
+      sequence: match[1],
+      id: Utils.extractLastNDigits(match[2]),
+      sex: match[3],
+      age: match[4] || null,
+      name: null
+    };
+  }
+
+  extractAgeAndName(lines, startIndex, rowData) {
+    let foundAge = !!rowData.age;
+    let nameParts = [];
+    let j = startIndex + 1;
+    const maxLookAhead = Math.min(startIndex + Constants.CONFIG.MAX_LOOKAHEAD, lines.length);
+
+    while (j < maxLookAhead) {
+      const line = lines[j];
+
+      if (this.shouldStopSearching(line)) break;
+      if (Utils.isOCRArtifact(line)) { j++; continue; }
+
+      if (!foundAge && Constants.REGEX_PATTERNS.STANDALONE_NUMBER.test(line)) {
+        rowData.age = line;
+        foundAge = true;
+        j++;
+        continue;
+      }
+
+      if (foundAge && this.isNameLine(line)) {
+        nameParts.push(line);
+        j++;
+        continue;
+      }
+
+      if (foundAge && nameParts.length > 0 && this.shouldContinueCollectingName(lines, j)) {
+        j++;
+        continue;
+      }
+
+      if (foundAge && nameParts.length > 0) break;
+      j++;
+    }
+
+    if (nameParts.length > 0) {
+      rowData.name = Utils.cleanName(nameParts.filter(part =>
+        !Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(part.toLowerCase())
+      ).join(' '));
+    }
+
+    if (!rowData.age) this.findBackupAge(lines, startIndex, rowData);
+    if (!rowData.name) this.findBackupName(lines, startIndex, rowData);
+
+    return j;
+  }
+
+  shouldStopSearching(line) {
+    return Utils.isNewRecord(line) || Utils.isPageSeparator(line);
+  }
+
+  isNameLine(line) {
+    if (!Constants.REGEX_PATTERNS.HAS_LETTERS.test(line)) return false;
+    if (Utils.isNewRecord(line)) return false;
+    if (Constants.REGEX_PATTERNS.NUMBER_WITH_SPACE.test(line)) return false;
+    if (Constants.REGEX_PATTERNS.NUMBER_WITH_DOTS.test(line)) return false;
+    return !Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(line.toLowerCase());
+  }
+
+  shouldContinueCollectingName(lines, currentIndex) {
+    if (currentIndex + 1 >= lines.length) return false;
+    const nextLine = lines[currentIndex + 1];
+    return Constants.REGEX_PATTERNS.HAS_LETTERS.test(nextLine) &&
+      !Utils.isNewRecord(nextLine) &&
+      !Constants.REGEX_PATTERNS.NUMBER_WITH_SPACE.test(nextLine) &&
+      !Constants.REGEX_PATTERNS.STANDALONE_NUMBER.test(nextLine);
+  }
+
+  findBackupAge(lines, startIndex, rowData) {
+    const maxIndex = Math.min(startIndex + Constants.CONFIG.BACKUP_LOOKAHEAD, lines.length);
+    for (let k = startIndex + 1; k < maxIndex; k++) {
+      if (Utils.isNewRecord(lines[k])) break;
+      if (Constants.REGEX_PATTERNS.STANDALONE_NUMBER.test(lines[k])) {
+        rowData.age = lines[k];
+        break;
+      }
+    }
+  }
+
+  findBackupName(lines, startIndex, rowData) {
+    const nameParts = [];
+    const maxIndex = Math.min(startIndex + Constants.CONFIG.BACKUP_LOOKAHEAD, lines.length);
+
+    for (let k = startIndex + 1; k < maxIndex; k++) {
+      const line = lines[k];
+      if (Utils.isNewRecord(line)) break;
+
+      if (this.isNameLine(line)) {
+        nameParts.push(line);
+        if (this.shouldContinueCollectingName(lines, k)) {
+          k++;
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (nameParts.length > 0) {
+      rowData.name = Utils.cleanName(nameParts.join(' '));
+    }
+  }
+}
+
+// ============================================================================
+// TABLE RENDERER - Single Responsibility: Render UI components
+// ============================================================================
+class TableRenderer {
+  constructor(outputElement) {
+    this.outputElement = outputElement;
+  }
+
+  render(data, rawText) {
+    if (!data?.rows?.length) {
+      this.renderEmptyState(rawText);
+      return;
+    }
+
+    this.outputElement.innerHTML = this.buildTableHTML(data.rows, rawText);
+    window.extractedData = data;
+    this.setupEditableCells();
+  }
+
+  renderEmptyState(rawText) {
+    this.outputElement.innerHTML = `
+      <div class="container">
+        <div style="text-align: center; padding: 40px;">
+          <i class="fas fa-exclamation-triangle" style="font-size: 3em; color: var(--warning); margin-bottom: 20px;"></i>
+          <p style="font-size: 18px; color: var(--text-primary); font-weight: 600; margin-bottom: 10px;">${Constants.UI_MESSAGES.NO_DATA}</p>
+          <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 30px;">Texto bruto extraído do PDF:</p>
+          <div class="raw-text">${rawText}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  buildTableHTML(rows, rawText) {
+    return `
+      <div class="container">
+        <div class="tabs">
+          <div class="tab active" onclick="showTab('table', this)">
+            <i class="fas fa-table"></i>
+            Tabela de Dados (${rows.length})
+          </div>
+          <div class="tab" onclick="showTab('raw', this)">
+            <i class="fas fa-file-alt"></i>
+            Texto Bruto
+          </div>
+        </div>
+        
+        <div id="table-tab" class="tab-content active">
+          <div class="info-badge">
+            <i class="fas fa-edit"></i>
+            Clique em qualquer célula (exceto #) para editar os dados
+          </div>
+          <div style="overflow-x: auto;">
+            <table id="dataTable">
+              <thead>${this.buildHeaderRow()}</thead>
+              <tbody>${this.buildTableRows(rows)}</tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div id="raw-tab" class="tab-content">
+          <div class="raw-text">${rawText}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  buildHeaderRow() {
+    return '<tr>' + Constants.CSV_COLUMNS.HEADERS.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  }
+
+  buildTableRows(rows) {
+    return rows.map((item, index) => this.buildTableRow(item, index)).join('');
+  }
+
+  buildTableRow(item, index) {
+    const fields = ['id', 'sex', 'age', 'name'];
+    const cells = fields.map(field => this.buildEditableCell(item, field, index));
+
+    return `<tr><td>${item.sequence || ''}</td>${cells.join('')}</tr>`;
+  }
+
+  buildEditableCell(item, field, index) {
+    const value = item[field] || 'N/A';
+    const isNA = value === 'N/A' || value === '';
+    const naClass = isNA ? ' na-value' : '';
+
+    return `<td class="editable${naClass}" contenteditable="true" data-field="${field}" data-index="${index}">${value}</td>`;
+  }
+
+  setupEditableCells() {
+    document.querySelectorAll('td.editable[contenteditable="true"]').forEach(cell => {
+      cell.addEventListener('focus', function () {
+        this.dataset.originalValue = this.textContent.trim();
+      });
+
+      cell.addEventListener('blur', function () {
+        const field = this.dataset.field;
+        const index = parseInt(this.dataset.index);
+        const newValue = this.textContent.trim();
+
+        if (window.extractedData?.rows?.[index]) {
+          window.extractedData.rows[index][field] = newValue;
+          this.classList.toggle('na-value', newValue === 'N/A' || newValue === '');
+        }
+      });
+
+      cell.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.blur();
+        }
+      });
+    });
+  }
+}
+
+// ============================================================================
+// CSV PROCESSOR - Single Responsibility: Process CSV files
+// ============================================================================
+class CSVProcessor {
+  constructor() {
+    this.extractedDataMap = {};
+  }
+
+  setExtractedData(data) {
+    this.extractedDataMap = {};
+    (data?.rows || []).forEach(row => {
+      const id = String(row.id || '').trim();
+      if (id) {
+        this.extractedDataMap[id] = {
+          name: row.name || '',
+          sex: row.sex || '',
+          age: row.age || ''
+        };
+      }
+    });
+  }
+
+  parse(csvText) {
+    const lines = csvText.split('\n').filter(line => line.trim().length > 0);
+    if (lines.length === 0) return { headers: [], rows: [] };
+
+    const headers = lines[0].split(',').map(h => h.trim());
+    const rows = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = this.parseCSVLine(lines[i]);
+      if (values.length > 0) rows.push(values);
+    }
+
+    return { headers, rows };
+  }
+
+  parseCSVLine(line) {
+    const values = [];
+    let currentValue = '';
+    let inQuotes = false;
+
+    for (let char of line) {
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(currentValue.trim());
+        currentValue = '';
+      } else {
+        currentValue += char;
+      }
+    }
+    values.push(currentValue.trim());
+
+    return values;
+  }
+
+  convertToCSV(headers, rows) {
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    return headers.map(escapeCSV).join(',') + '\n' +
+      rows.map(row => row.map(escapeCSV).join(',')).join('\n');
+  }
+
+  findColumnIndex(headers, possibleNames) {
+    return headers.findIndex(h => possibleNames.includes(h));
+  }
+
+  fillCSVWithData(headers, rows) {
+    const idColumnIndex = this.findColumnIndex(headers, Constants.CSV_COLUMNS.ID_NAMES);
+    if (idColumnIndex === -1) return null;
+
+    const nameColumnIndex = headers.findIndex(h => h.toLowerCase().includes('nome'));
+    const sexColumnIndex = headers.findIndex(h => h.toLowerCase().includes('sexo'));
+    const ageColumnIndex = headers.findIndex(h => h.toLowerCase().includes('idade'));
+
+    let filledCount = 0;
+
+    rows.forEach(row => {
+      if (row.length <= idColumnIndex) return;
+
+      const csvId = String(row[idColumnIndex] || '').trim();
+      const idLast5 = csvId.length >= Constants.CONFIG.ID_DIGITS
+        ? csvId.slice(-Constants.CONFIG.ID_DIGITS)
+        : csvId;
+
+      const data = this.extractedDataMap[idLast5];
+      if (!data) return;
+
+      filledCount += this.fillColumn(row, nameColumnIndex, data.name);
+      filledCount += this.fillColumn(row, sexColumnIndex, data.sex);
+      filledCount += this.fillColumn(row, ageColumnIndex, data.age);
+    });
+
+    return { headers, rows, filledCount };
+  }
+
+  fillColumn(row, columnIndex, value) {
+    if (columnIndex === -1 || !value) return 0;
+
+    while (row.length <= columnIndex) {
+      row.push('');
+    }
+
+    if (!row[columnIndex] || row[columnIndex].trim() === '') {
+      row[columnIndex] = value;
+      return 1;
+    }
+
+    return 0;
+  }
+
+  generateDownloadCSV(data) {
+    if (!data?.rows) return '';
+
+    const headers = Constants.CSV_COLUMNS.HEADERS;
+    const rows = data.rows.map(item => [
+      item.sequence || '',
+      item.id || '',
+      item.sex || '',
+      item.age || 'N/A',
+      (item.name || 'N/A').replace(/,/g, ';')
+    ]);
+
+    return this.convertToCSV(headers, rows);
+  }
+}
+
+// ============================================================================
+// UI MANAGER - Single Responsibility: Manage UI interactions
+// ============================================================================
+class UIManager {
+  constructor() {
+    this.csvProcessor = new CSVProcessor();
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    const csvFile = document.getElementById('csvFile');
+    const pdfFile = document.getElementById('pdfFile');
+
+    if (csvFile) {
+      csvFile.addEventListener('change', (e) => {
+        this.handleCSVFileSelection(e.target.files[0]);
+      });
+    }
+
+    if (pdfFile) {
+      pdfFile.addEventListener('change', async (e) => {
+        await this.handlePDFFileSelection(e.target.files[0]);
+      });
+    }
+  }
+
+  handleCSVFileSelection(file) {
+    const btn = document.getElementById('processCSVBtn');
+    const status = document.getElementById('csvStatus');
+
+    if (file) {
+      btn.disabled = false;
+      status.innerHTML = `
+        <div class="status-message status-info">
+          <i class="fas fa-check-circle"></i> 
+          ${Constants.UI_MESSAGES.CSV_SELECTED}: <strong>${file.name}</strong>
+        </div>
+      `;
+    } else {
+      btn.disabled = true;
+      status.innerHTML = '';
+    }
+  }
+
+  async handlePDFFileSelection(file) {
+    const status = document.getElementById('pdfStatus');
+    
+    if (!file) {
+      if (status) status.innerHTML = '';
+      return;
+    }
+
+    // Mostrar status do arquivo selecionado
+    if (status) {
+      status.innerHTML = `
+        <div class="status-message status-info">
+          <i class="fas fa-check-circle"></i> 
+          Arquivo selecionado: <strong>${file.name}</strong>
+        </div>
+      `;
+    }
+
+    const output = document.getElementById('output');
+    const processor = new PDFProcessor(output);
+    const extractor = new DataExtractor();
+    const renderer = new TableRenderer(output);
+
+    processor.showInitialLoader();
+
+    try {
+      const allText = await processor.process(file);
+      const extractedData = extractor.extract(allText);
+      this.csvProcessor.setExtractedData(extractedData);
+      renderer.render(extractedData, allText);
+    } catch (error) {
+      console.error('Error processing PDF:', error);
+      output.innerHTML = `
+        <div class="container">
+          <div class="status-message status-error">
+            <i class="fas fa-exclamation-circle"></i>
+            Erro ao processar PDF: ${error.message}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  processCSV() {
+    const csvFileInput = document.getElementById('csvFile');
+    const statusDiv = document.getElementById('csvStatus');
+
+    if (!csvFileInput.files?.[0]) {
+      statusDiv.innerHTML = `
+        <div class="status-message status-error">
+          <i class="fas fa-exclamation-circle"></i> 
+          ${Constants.UI_MESSAGES.CSV_REQUIRED}
+        </div>
+      `;
+      return;
+    }
+
+    if (!window.extractedData?.rows?.length) {
+      statusDiv.innerHTML = `
+        <div class="status-message status-error">
+          <i class="fas fa-exclamation-circle"></i> 
+          ${Constants.UI_MESSAGES.PDF_REQUIRED}
+        </div>
+      `;
+      return;
+    }
+
+    const file = csvFileInput.files[0];
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const parsed = this.csvProcessor.parse(e.target.result);
+        const result = this.csvProcessor.fillCSVWithData(parsed.headers, parsed.rows);
+
+        if (!result) {
+          statusDiv.innerHTML = `
+            <div class="status-message status-error">
+              <i class="fas fa-exclamation-circle"></i> 
+              ${Constants.UI_MESSAGES.ID_COLUMN_NOT_FOUND}
+            </div>
+          `;
+          return;
+        }
+
+        const { headers, rows, filledCount } = result;
+        const updatedCSV = this.csvProcessor.convertToCSV(headers, rows);
+        Utils.downloadFile(updatedCSV, file.name.replace('.csv', '_preenchido.csv'));
+
+        statusDiv.innerHTML = `
+          <div class="status-message status-success">
+            <i class="fas fa-check-circle"></i> 
+            ${Constants.UI_MESSAGES.CSV_PROCESSED} 
+            <strong>${filledCount}</strong> campos preenchidos. Arquivo baixado.
+          </div>
+        `;
+      } catch (error) {
+        statusDiv.innerHTML = `
+          <div class="status-message status-error">
+            <i class="fas fa-exclamation-circle"></i> 
+            ${Constants.UI_MESSAGES.CSV_ERROR} ${error.message}
+          </div>
+        `;
+        console.error('Error processing CSV:', error);
+      }
+    };
+
+    reader.onerror = () => {
+      statusDiv.innerHTML = `
+        <div class="status-message status-error">
+          <i class="fas fa-exclamation-circle"></i> 
+          ${Constants.UI_MESSAGES.CSV_READ_ERROR}
+        </div>
+      `;
+    };
+
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  showTab(tabName, element) {
+    document.querySelectorAll('.tab-content').forEach(content => {
+      content.classList.remove('active');
+    });
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.classList.remove('active');
+    });
+
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+    if (element) element.classList.add('active');
+  }
+
+  downloadCSV() {
+    if (!window.extractedData) return;
+    const csv = this.csvProcessor.generateDownloadCSV(window.extractedData);
+    Utils.downloadFile(csv, 'dados_extraidos.csv');
+  }
+}
+
+// ============================================================================
+// APP INITIALIZATION
+// ============================================================================
+// Wait for DOM to be ready before initializing
+document.addEventListener('DOMContentLoaded', () => {
+  const App = new UIManager();
+
+  // Expose methods globally for onclick handlers
+  window.processCSV = () => App.processCSV();
+  window.showTab = (tabName, element) => App.showTab(tabName, element);
+  window.downloadCSV = () => App.downloadCSV();
+});
+
