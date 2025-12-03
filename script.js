@@ -3,14 +3,15 @@
 // ============================================================================
 const Constants = {
   REGEX_PATTERNS: {
-    RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([MFN])\s*\]?\s*\|(\d+)?/,
-    NEW_RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([MFN])\s*\]?\s*\|/,
+    RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([WN]?[MF]|N)\s*\]?\s*\|(\d+)?/,
+    NEW_RECORD: /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\]?\s*\|\s*([WN]?[MF]|N)\s*\]?\s*\|/,
     PAGE_SEPARATOR: /^---\s*Página/,
     STANDALONE_NUMBER: /^\d+$/,
     HAS_LETTERS: /[A-Za-z]/,
-    OCR_ARTIFACT: /^(ál|al)$/i,
+    OCR_ARTIFACT: /^(ál|al|n)$/i,
     NUMBER_WITH_DOTS: /^\d+\.\d+/,
-    NUMBER_WITH_SPACE: /^\d+\s+\d+/
+    NUMBER_WITH_SPACE: /^\d+\s+\d+/,
+    URL_LINK: /https?:\/\/[^\s]+/i
   },
   CSV_COLUMNS: {
     ID_NAMES: ['ID amost.', 'ID', 'Id', 'id', 'ID amostra', 'ID amostra.'],
@@ -53,15 +54,23 @@ const Utils = {
       .replace(/\s+\.\s*$/, '')
       .replace(/\.$/, '')
       .replace(/\s+\d+\s+\d+\.\d+.*$/, '')
-      .replace(/\s+\d+\s+\d+.*\|[MFN]\|.*$/, '')
+      .replace(/\s+\d+\s+\d+.*\|[MF]\|.*$/, '')
       .replace(/\s+\d{5,}.*$/, '')
+      .replace(/\s*https?:\/\/[^\s]+/gi, '')
       .trim();
   },
 
   isOCRArtifact(text) {
+    if (Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(text.toLowerCase())) {
+      return true;
+    }
     return text.length <= 3 &&
       !Constants.REGEX_PATTERNS.HAS_LETTERS.test(text) &&
       /^[a-záéíóú]+$/.test(text);
+  },
+
+  isLink(line) {
+    return Constants.REGEX_PATTERNS.URL_LINK.test(line);
   },
 
   isNewRecord(line) {
@@ -190,7 +199,7 @@ class DataExtractor {
         const rowData = this.createRowData(match);
         const nextIndex = this.extractAgeAndName(lines, i, rowData);
 
-        if (rowData.id && rowData.sex) {
+        if (rowData.id && rowData.sex && (rowData.sex === 'M' || rowData.sex === 'F')) {
           rowData.age = rowData.age || 'N/A';
           rowData.name = rowData.name || 'N/A';
           results.push(rowData);
@@ -213,10 +222,20 @@ class DataExtractor {
     return {
       sequence: match[1],
       id: Utils.extractLastNDigits(match[2]),
-      sex: match[3],
+      sex: this.normalizeSex(match[3]),
       age: match[4] || null,
       name: null
     };
+  }
+
+  normalizeSex(sexValue) {
+    if (!sexValue) return '';
+    const normalized = sexValue.toUpperCase();
+    // Apenas M ou F são aceitos: N -> M (erro OCR), WM -> M, NM -> M, WF -> F, NF -> F
+    if (normalized === 'N' || normalized === 'WM' || normalized === 'NM' || normalized === 'M') return 'M';
+    if (normalized === 'WF' || normalized === 'NF' || normalized === 'F') return 'F';
+    // Rejeita qualquer outro valor
+    return '';
   }
 
   extractAgeAndName(lines, startIndex, rowData) {
@@ -230,6 +249,7 @@ class DataExtractor {
 
       if (this.shouldStopSearching(line)) break;
       if (Utils.isOCRArtifact(line)) { j++; continue; }
+      if (Utils.isLink(line)) { j++; continue; }
 
       if (!foundAge && Constants.REGEX_PATTERNS.STANDALONE_NUMBER.test(line)) {
         rowData.age = line;
@@ -255,7 +275,8 @@ class DataExtractor {
 
     if (nameParts.length > 0) {
       rowData.name = Utils.cleanName(nameParts.filter(part =>
-        !Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(part.toLowerCase())
+        !Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(part.toLowerCase()) &&
+        !Utils.isLink(part)
       ).join(' '));
     }
 
@@ -272,6 +293,7 @@ class DataExtractor {
   isNameLine(line) {
     if (!Constants.REGEX_PATTERNS.HAS_LETTERS.test(line)) return false;
     if (Utils.isNewRecord(line)) return false;
+    if (Utils.isLink(line)) return false;
     if (Constants.REGEX_PATTERNS.NUMBER_WITH_SPACE.test(line)) return false;
     if (Constants.REGEX_PATTERNS.NUMBER_WITH_DOTS.test(line)) return false;
     return !Constants.REGEX_PATTERNS.OCR_ARTIFACT.test(line.toLowerCase());
@@ -282,6 +304,7 @@ class DataExtractor {
     const nextLine = lines[currentIndex + 1];
     return Constants.REGEX_PATTERNS.HAS_LETTERS.test(nextLine) &&
       !Utils.isNewRecord(nextLine) &&
+      !Utils.isLink(nextLine) &&
       !Constants.REGEX_PATTERNS.NUMBER_WITH_SPACE.test(nextLine) &&
       !Constants.REGEX_PATTERNS.STANDALONE_NUMBER.test(nextLine);
   }
@@ -304,6 +327,7 @@ class DataExtractor {
     for (let k = startIndex + 1; k < maxIndex; k++) {
       const line = lines[k];
       if (Utils.isNewRecord(line)) break;
+      if (Utils.isLink(line)) continue;
 
       if (this.isNameLine(line)) {
         nameParts.push(line);
