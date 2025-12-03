@@ -642,6 +642,59 @@ td.editable.na-value:focus {
   background: var(--primary-dark);
 }
 
+/* Unified Lines Styles */
+.unified-lines-container {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  max-height: 600px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.unified-line {
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-family: 'Courier New', 'Monaco', monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  word-break: break-word;
+}
+
+.unified-line:hover {
+  background: rgba(99, 102, 241, 0.05);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.unified-line:last-child {
+  margin-bottom: 0;
+}
+
+.unified-lines-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.unified-lines-container::-webkit-scrollbar-track {
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.unified-lines-container::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: var(--radius-sm);
+}
+
+.unified-lines-container::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-dark);
+}
+
 /* Loader Styles */
 .loader-container {
   text-align: center;
