@@ -32,7 +32,16 @@ const Utils = {
     return text
       .replace(/[\]?]/g, '')
       .replace(/^(\d+)\/(\d+)\s+(\d+\.?\d*\.?\d*)/gm, '$1$2 $3')
-      .replace(/\|([MFN])\|\s*\|\s*(\d+)/g, '|$1| $2');
+      .replace(/\|([MFN])\|\s*\|\s*(\d+)/g, '|$1| $2')
+      // Fix OCR errors where letters replace digits at end of ID patterns
+      // Pattern: number.number.numberLetter | -> try to fix (e.g., "25.083.1M |" -> "25.083.144 |")
+      // Common OCR errors: M often = 44, N = 11, but we'll be conservative
+      .replace(/(\d+\.\d+\.\d)([A-Z])(\s*\|)/g, (match, p1, p2, p3) => {
+        // If it's a single letter after a digit before pipe, try common replacements
+        const replacements = { 'M': '44', 'N': '11', 'O': '0', 'I': '1' };
+        // Only replace if it's a known common error, otherwise remove the letter
+        return p1 + (replacements[p2] || '') + p3;
+      });
   },
 
   normalizeRecordLines(text) {
@@ -70,7 +79,8 @@ const Utils = {
   },
 
   extractLastNDigits(value, n = Constants.CONFIG.ID_DIGITS) {
-    const cleaned = String(value || '').replace(/[.\s/,]/g, '');
+    // Remove dots, spaces, commas, and also remove letters (OCR errors like "1M" -> "1")
+    const cleaned = String(value || '').replace(/[.\s/,]/g, '').replace(/[A-Za-z]/g, '');
     return cleaned.length >= n ? cleaned.slice(-n) : cleaned;
   },
 
@@ -200,30 +210,35 @@ class DataExtractor {
   }
 
   extractFromLine(line) {
+    // Clean any remaining OCR errors: remove letters that appear after numbers before pipe
+    // (This is a fallback - most should be fixed in fixOCRErrors)
+    let cleanedLine = line.replace(/(\d+(?:\.\d+){0,2})([A-Za-z])(\s*\|)/g, '$1$3');
+    
     // Consolidated patterns - try most specific first
+    // ID pattern: digits with dots, stops at letter or pipe (OCR errors like "1M" are handled in extractLastNDigits)
     const patterns = [
       // Empty pipe before sex: | |F| | age name
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|\s*\|([WN]?[MF]|N)\|\s*(?:\|\s+)?(\d+)\s+(.+)$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|\s*\|([WN]?[MF]|N)\|\s*(?:\|\s+)?(\d+)\s+(.+)$/,
       // Empty pipe before sex: | |F| | age
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|\s*\|([WN]?[MF]|N)\|\s*(?:\|\s+)?(\d+)$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|\s*\|([WN]?[MF]|N)\|\s*(?:\|\s+)?(\d+)$/,
       // Empty pipe before sex: | |F|
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|\s*\|([WN]?[MF]|N)\|\s*$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|\s*\|([WN]?[MF]|N)\|\s*$/,
       // Normal pipe sex: |F| | age name
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|([WN]?[MF]|N)\|\s*\|?\s*(\d+)\s+(.+)$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|([WN]?[MF]|N)\|\s*\|?\s*(\d+)\s+(.+)$/,
       // Normal pipe sex: |F| | age
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|([WN]?[MF]|N)\|\s*\|?\s*(\d+)$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|([WN]?[MF]|N)\|\s*\|?\s*(\d+)$/,
       // Normal pipe sex: |F|
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|([WN]?[MF]|N)\|\s*$/,
-      // Generic: sequence ID sex age name
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|?\s*([WN]?[MF]|N)?\s*\|?\s*(\d+)?\s*(.+)?$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|([WN]?[MF]|N)\|\s*$/,
+      // Generic: sequence ID sex age name (ID stops at pipe or space before letter)
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|?\s*([WN]?[MF]|N)?\s*\|?\s*(\d+)?\s*(.+)?$/,
       // Without age: sequence ID sex name
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)\s*\|?\s*([WN]?[MF]|N)\s+(.+)$/,
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})\s*\|?\s*([WN]?[MF]|N)\s+(.+)$/,
       // Simple: sequence ID
-      /^(\d+)\s+(\d+(?:[.\s/,]*\d+)*)/
+      /^(\d+)\s+(\d+(?:\.\d+){0,2})/
     ];
 
     for (const pattern of patterns) {
-      const match = line.match(pattern);
+      const match = cleanedLine.match(pattern);
       if (match) {
         return {
           sequence: match[1] || '',
