@@ -31,6 +31,8 @@
     CSV_PROCESSED: 'CSV processado com sucesso!',
     CSV_ERROR: 'Erro ao processar CSV:',
     CSV_READ_ERROR: 'Erro ao ler o arquivo CSV.',
-    PDF_ERROR: 'Erro ao processar PDF:'
+    PDF_ERROR: 'Erro ao processar PDF:',
+    INVALID_PDF: 'Arquivo inválido: selecione um arquivo .pdf',
+    INVALID_CSV: 'Arquivo inválido: selecione um arquivo .csv'
   });
 })(globalThis.Ane = globalThis.Ane || {});

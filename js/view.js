@@ -20,96 +20,189 @@
     return new SafeHtml(strings.reduce((out, str, i) => out + render(values[i - 1]) + str));
   }
 
-  const STATUS_ICONS = { info: 'check-circle', success: 'check-circle', error: 'exclamation-circle' };
+  // ---------------------------------------------------------------------------
+  // Passos e mensagens
+  // ---------------------------------------------------------------------------
+
+  // state: 'locked' | 'active' | 'done'. Passos bloqueados desabilitam seus campos.
+  function setStepState(step, state) {
+    step.dataset.state = state;
+    step.querySelectorAll('input').forEach((input) => { input.disabled = state === 'locked'; });
+  }
+
+  const STATUS_ICONS = { info: 'circle-check', success: 'circle-check', error: 'circle-exclamation' };
 
   // `message` pode ser texto simples ou o resultado de `html`.
   function showStatus(element, message, type = 'info') {
     element.innerHTML = html`
-      <div class="status-message status-${type}" role="${type === 'error' ? 'alert' : 'status'}">
-        <i class="fas fa-${STATUS_ICONS[type]}"></i> <span>${message}</span>
+      <div class="status status-${type}" role="${type === 'error' ? 'alert' : 'status'}">
+        <i class="fas fa-${STATUS_ICONS[type]}"></i><span>${message}</span>
       </div>`;
+  }
+
+  function showFileChip(element, fileName) {
+    showStatus(element, html`<span class="file-name">${fileName}</span>`, 'info');
   }
 
   function clear(element) {
     element.innerHTML = '';
   }
 
+  // ---------------------------------------------------------------------------
+  // Processamento do PDF
+  // ---------------------------------------------------------------------------
+
   function showLoader(output) {
     output.innerHTML = html`
-      <div class="container">
-        <div class="loader-container">
-          <i class="fas fa-file-pdf loader-icon"></i>
-          <div class="loader-title">Processando PDF com OCR...</div>
-          <div class="loader-subtitle">Isso pode levar alguns segundos. Por favor, aguarde.</div>
-          <div class="progress-container">
-            <div class="progress-bar-wrapper"><div class="progress-bar"></div></div>
-            <div class="progress-text">0% concluído</div>
-          </div>
+      <div class="loader">
+        <i class="fas fa-circle-notch fa-spin loader-icon"></i>
+        <div class="loader-title">Preparando o OCR...</div>
+        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress-bar"></div>
         </div>
+        <div class="loader-subtitle">0% concluído</div>
       </div>`;
   }
 
   function updateProgress(output, pageNumber, totalPages) {
-    const loader = output.querySelector('.loader-container');
+    const loader = output.querySelector('.loader');
     if (!loader) return;
-    const percent = Math.round((pageNumber / totalPages) * 100);
-    loader.querySelector('.loader-title').textContent = `Processando página ${pageNumber} de ${totalPages}`;
-    loader.querySelector('.loader-subtitle').textContent = 'Extraindo dados da tabela...';
+    const percent = Math.round(((pageNumber - 1) / totalPages) * 100);
+    loader.querySelector('.loader-title').textContent = `Lendo página ${pageNumber} de ${totalPages}`;
+    loader.querySelector('.progress').setAttribute('aria-valuenow', percent);
     loader.querySelector('.progress-bar').style.width = `${percent}%`;
-    loader.querySelector('.progress-text').textContent = `${percent}% concluído`;
+    loader.querySelector('.loader-subtitle').textContent = `${percent}% concluído`;
   }
+
+  const rawTextDetails = (rawText, open = false) => html`
+    <details class="raw-details" ${open ? html`open` : ''}>
+      <summary><i class="fas fa-chevron-right"></i> Texto bruto do OCR</summary>
+      <div class="raw-text">${rawText}</div>
+    </details>`;
 
   function showEmptyResult(output, rawText) {
     output.innerHTML = html`
-      <div class="container">
-        <div class="empty-state">
-          <i class="fas fa-exclamation-triangle empty-state-icon"></i>
-          <p class="empty-state-title">${Ane.messages.NO_DATA}</p>
-          <p class="empty-state-subtitle">Texto bruto extraído do PDF:</p>
-          <div class="raw-text">${rawText}</div>
-        </div>
-      </div>`;
+      <div class="status status-error" role="alert">
+        <i class="fas fa-triangle-exclamation"></i>
+        <span>${Ane.messages.NO_DATA}. Confira abaixo o texto lido do PDF.</span>
+      </div>
+      ${rawTextDetails(rawText, true)}`;
   }
 
-  const tableRow = (row, index) => html`
-    <tr>
-      <td>${row.sequence}</td>
-      ${Ane.editableFields.map((field) => html`
-        <td class="editable${row[field] ? '' : ' na-value'}" contenteditable="true"
-            data-field="${field}" data-index="${index}">${row[field]}</td>`)}
-    </tr>`;
+  // ---------------------------------------------------------------------------
+  // Resultado: resumo, tabela editável e formato padronizado
+  // ---------------------------------------------------------------------------
 
-  const standardLines = (lines) => lines.length
+  const ISSUE_CLASSES = { empty: 'cell-empty', suspect: 'cell-suspect' };
+  const isUnrecognized = (row) => !row.sequence && !row.id && row.rawLine;
+
+  const cellAttrs = (issue) => ({
+    className: issue ? ISSUE_CLASSES[issue.type] : '',
+    title: issue ? issue.message : ''
+  });
+
+  function tableRows(row, index, issues) {
+    const flagged = Object.keys(issues).length ? 'has-issues' : '';
+    const cells = Ane.editableFields.map((field) => {
+      const { className, title } = cellAttrs(issues[field]);
+      return html`<td class="editable ${className}" contenteditable="true" title="${title}"
+        data-field="${field}" data-index="${index}">${row[field]}</td>`;
+    });
+
+    const main = html`<tr class="data-row ${flagged}" data-index="${index}"><td class="cell-seq">${row.sequence}</td>${cells}</tr>`;
+    if (!isUnrecognized(row)) return main;
+
+    // Linha que o OCR não conseguiu separar: mostra o texto original para facilitar a correção.
+    return html`${main}
+      <tr class="raw-row ${flagged}" data-raw-for="${index}">
+        <td colspan="${Ane.tableHeaders.length}">
+          <i class="fas fa-triangle-exclamation"></i> Linha não reconhecida — texto original: <code>${row.rawLine}</code>
+        </td>
+      </tr>`;
+  }
+
+  const summaryContent = (count) => (count
+    ? html`<i class="fas fa-triangle-exclamation"></i><span><strong>${count}</strong> ${count === 1 ? 'linha precisa' : 'linhas precisam'} de revisão</span>`
+    : html`<i class="fas fa-circle-check"></i><span>Nenhuma linha precisa de revisão</span>`);
+
+  const standardLines = (lines) => (lines.length
     ? lines.map((line, i) => html`<div class="unified-line" data-index="${i}">${line}</div>`)
-    : html`<p class="empty-hint">Nenhum dado padronizado disponível</p>`;
+    : html`<p class="step-placeholder">Nenhum dado padronizado disponível</p>`);
 
+  // issues: array paralelo a rows com o resultado de parser.validateRecord.
   // onEdit(index, field, value) é chamado quando uma célula editada perde o foco.
-  function showResults(output, { rows, standardLines: lines }, rawText, onEdit) {
-    output.innerHTML = html`
-      <div class="container">
-        <div class="tabs" role="tablist">
-          <button type="button" class="tab active" data-tab="table"><i class="fas fa-table"></i> Tabela de Dados (${rows.length})</button>
-          <button type="button" class="tab" data-tab="standard"><i class="fas fa-code"></i> Formato Padronizado (${lines.length})</button>
-          <button type="button" class="tab" data-tab="raw"><i class="fas fa-file-alt"></i> Texto Bruto</button>
-        </div>
-        <div data-panel="table" class="tab-content active">
-          <div class="info-badge"><i class="fas fa-edit"></i> Clique em qualquer célula (exceto #) para editar os dados</div>
-          <div class="table-scroll">
-            <table>
-              <thead><tr>${Ane.tableHeaders.map((h) => html`<th>${h}</th>`)}</tr></thead>
-              <tbody>${rows.map(tableRow)}</tbody>
-            </table>
-          </div>
-        </div>
-        <div data-panel="standard" class="tab-content">
-          <div class="info-badge"><i class="fas fa-info-circle"></i> Dados no formato padronizado: #;id;sexo;idade;nome</div>
-          <div class="unified-lines-container">${standardLines(lines)}</div>
-        </div>
-        <div data-panel="raw" class="tab-content"><div class="raw-text">${rawText}</div></div>
-      </div>`;
+  function showResults(output, { rows, standardLines: lines }, rawText, issues, onEdit) {
+    const issueCount = issues.filter((i) => Object.keys(i).length).length;
 
+    output.innerHTML = html`
+      <div class="review-bar">
+        <div class="review-summary" role="status"></div>
+        <label class="toggle">
+          <input type="checkbox" class="filter-issues">
+          <span>Mostrar só as linhas para revisar</span>
+        </label>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="table">Tabela <span class="tab-count">${rows.length}</span></button>
+        <button type="button" class="tab" data-tab="standard">Formato padronizado <span class="tab-count">${lines.length}</span></button>
+      </div>
+
+      <div data-panel="table" class="tab-content active">
+        <div class="legend">
+          <span><span class="legend-swatch cell-empty"></span> Campo vazio</span>
+          <span><span class="legend-swatch cell-suspect"></span> Valor suspeito (passe o mouse para ver o motivo)</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>${Ane.tableHeaders.map((h) => html`<th>${h}</th>`)}</tr></thead>
+            <tbody>${rows.map((row, i) => tableRows(row, i, issues[i]))}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-panel="standard" class="tab-content">
+        <p class="panel-hint">Formato: <code>#;id;sexo;idade;nome</code></p>
+        <div class="unified-lines">${standardLines(lines)}</div>
+      </div>
+
+      ${rawTextDetails(rawText)}`;
+
+    updateSummary(output, issueCount);
     bindTabs(output);
+    bindFilter(output);
     bindEditableCells(output, onEdit);
+  }
+
+  function updateSummary(output, count) {
+    const summary = output.querySelector('.review-summary');
+    const filter = output.querySelector('.filter-issues');
+    summary.innerHTML = summaryContent(count);
+    summary.classList.toggle('is-ok', count === 0);
+    filter.disabled = count === 0;
+    if (count === 0 && filter.checked) {
+      filter.checked = false;
+      filter.dispatchEvent(new Event('change'));
+    }
+  }
+
+  function updateRowIssues(output, index, issues) {
+    const flagged = Object.keys(issues).length > 0;
+    output.querySelectorAll(`tr[data-index="${index}"], tr[data-raw-for="${index}"]`)
+      .forEach((tr) => tr.classList.toggle('has-issues', flagged));
+
+    output.querySelectorAll(`td.editable[data-index="${index}"]`).forEach((cell) => {
+      const issue = issues[cell.dataset.field];
+      cell.classList.remove(...Object.values(ISSUE_CLASSES));
+      const { className, title } = cellAttrs(issue);
+      if (className) cell.classList.add(className);
+      cell.title = title;
+    });
+  }
+
+  function updateStandardLine(output, index, line) {
+    const el = output.querySelector(`.unified-line[data-index="${index}"]`);
+    if (el) el.textContent = line;
   }
 
   function bindTabs(root) {
@@ -119,6 +212,15 @@
       root.querySelectorAll('.tab, .tab-content').forEach((el) => el.classList.remove('active'));
       tab.classList.add('active');
       root.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+    });
+  }
+
+  // Linhas corrigidas continuam visíveis até o filtro ser reaplicado, para não "sumirem" durante a edição.
+  function bindFilter(root) {
+    const table = root.querySelector('table');
+    root.querySelector('.filter-issues').addEventListener('change', (event) => {
+      table.querySelectorAll('tr.keep-visible').forEach((tr) => tr.classList.remove('keep-visible'));
+      table.classList.toggle('only-issues', event.target.checked);
     });
   }
 
@@ -135,25 +237,25 @@
     tbody.addEventListener('focusout', (event) => {
       const cell = event.target;
       if (!cell.matches('td.editable')) return;
-      const value = cell.textContent.trim();
-      cell.classList.toggle('na-value', !value);
-      onEdit(Number(cell.dataset.index), cell.dataset.field, value);
+      const index = cell.dataset.index;
+      tbody.querySelectorAll(`tr[data-index="${index}"], tr[data-raw-for="${index}"]`)
+        .forEach((tr) => tr.classList.add('keep-visible'));
+      onEdit(Number(index), cell.dataset.field, cell.textContent.trim());
     });
-  }
-
-  function updateStandardLine(output, index, line) {
-    const el = output.querySelector(`.unified-line[data-index="${index}"]`);
-    if (el) el.textContent = line;
   }
 
   Ane.view = {
     html,
+    setStepState,
     showStatus,
+    showFileChip,
     clear,
     showLoader,
     updateProgress,
     showEmptyResult,
     showResults,
+    updateSummary,
+    updateRowIssues,
     updateStandardLine
   };
 })(globalThis.Ane = globalThis.Ane || {});

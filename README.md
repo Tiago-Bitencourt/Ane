@@ -15,33 +15,39 @@ Esta é uma ferramenta desenvolvida especificamente para uso pessoal, que permit
   - Idade
   - Nome
 - **Preenchimento Automático de CSV**: Preenche automaticamente arquivos CSV com os dados extraídos
+- **Revisão guiada**: Destaca campos vazios e valores suspeitos, com contador e filtro "só as linhas para revisar"
 - **Edição Inline**: Permite editar dados diretamente na tabela antes de exportar
-- **Interface Moderna**: Design responsivo e intuitivo com feedback visual
+- **Arrastar e soltar**: PDF e CSV podem ser arrastados para a página
+- **Exportar a tabela**: Baixa os dados extraídos como CSV (`;` + UTF-8 com BOM, pronto para o Excel)
 - **Visualização de Texto Bruto**: Permite visualizar o texto extraído do PDF para verificação
 - **Progresso em Tempo Real**: Mostra o progresso do processamento do PDF
 
 ## 🚀 Como Usar
 
-### 1. Extrair Dados do PDF
+A página é dividida em três passos; cada um é liberado quando o anterior termina.
 
-1. Clique em "Selecionar Arquivo PDF"
-2. Escolha o arquivo PDF que contém os dados
-3. Aguarde o processamento (o OCR pode levar alguns segundos)
-4. Visualize os dados extraídos na tabela
+### 1. Enviar o PDF
 
-### 2. Preencher CSV
+1. Clique na área do passo 1 ou arraste o PDF para ela
+2. Aguarde o processamento (o OCR leva alguns segundos por página)
+3. A página rola sozinha até os resultados
 
-1. Clique em "Selecionar Arquivo CSV"
-2. Escolha o arquivo CSV que deseja preencher
-3. Certifique-se de que o CSV contém uma coluna de ID (ex: "ID amost.", "ID", "Id", etc.)
-4. Clique em "Processar e Baixar CSV"
-5. O arquivo preenchido será baixado automaticamente
+### 2. Revisar os dados
 
-### 3. Editar Dados
+- O resumo no topo mostra quantas linhas precisam de revisão; marque "Mostrar só as linhas para revisar" para filtrá-las
+- Células **amarelas** estão vazias; células **vermelhas** têm valor suspeito — passe o mouse para ver o motivo:
+  - ID com quantidade de dígitos diferente de 5
+  - Sexo diferente de M, F ou N (ex.: `WF`)
+  - Idade fora de 1 a 120
+  - Nome com números ou símbolos (sinal de duas linhas coladas pelo OCR)
+- Linhas que o OCR não conseguiu separar mostram o texto original logo abaixo
+- Clique em qualquer célula (exceto #) para editar; Enter confirma. As edições são usadas no CSV
 
-- Clique em qualquer célula da tabela (exceto a coluna #) para editar
-- Pressione Enter para confirmar a edição
-- Os dados editados serão salvos automaticamente
+### 3. Preencher o CSV
+
+1. Clique na área do passo 3 ou arraste o CSV (precisa ter uma coluna de ID, ex.: "ID amost.", "ID")
+2. Clique em "Preencher e baixar CSV" — o arquivo `<nome>_preenchido.csv` é baixado
+3. Ou use "Baixar só a tabela" para exportar apenas os dados extraídos
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -137,11 +143,10 @@ As seguintes bibliotecas são carregadas via CDN:
 
 ## 🎨 Características de Design
 
-- Design moderno com gradientes e animações suaves
-- Suporte a modo escuro (baseado nas preferências do sistema)
-- Interface responsiva para diferentes tamanhos de tela
-- Feedback visual claro para todas as ações
-- Indicadores de progresso durante o processamento
+- Fluxo em passos numerados, com estado (bloqueado / atual / concluído)
+- Visual limpo: superfícies lisas, roxo apenas como cor de destaque, largura máxima de 960px
+- Tema claro e escuro (seguem a preferência do sistema), com contraste verificado nos dois
+- Responsivo, com navegação por teclado e respeito a "reduzir movimento" do sistema
 
 ## ⚠️ Limitações
 

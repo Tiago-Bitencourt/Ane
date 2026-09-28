@@ -137,7 +137,30 @@
     return { rows, standardLines };
   }
 
+  // Regras de revisão: retornam a mensagem do problema ou null se o valor parece correto.
+  const VALIDATORS = {
+    id: (v) => (/^\d+$/.test(v) && v.length === Ane.config.ID_DIGITS ? null : `O ID deve ter ${Ane.config.ID_DIGITS} dígitos`),
+    sex: (v) => (/^[MFN]$/.test(v) ? null : 'O sexo deve ser M, F ou N'),
+    age: (v) => (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 120 ? null : 'Idade fora do esperado (1 a 120)'),
+    name: (v) => (/[\d|]/.test(v) ? 'O nome contém números ou símbolos' : null)
+  };
+
+  // Retorna { campo: { type: 'empty' | 'suspect', message } } só para os campos com problema.
+  function validateRecord(row) {
+    const issues = {};
+    for (const field of Ane.editableFields) {
+      const value = String(row[field] ?? '').trim();
+      const message = value ? VALIDATORS[field](value) : 'Campo vazio';
+      if (message) issues[field] = { type: value ? 'suspect' : 'empty', message };
+    }
+    return issues;
+  }
+
+  const hasIssues = (row) => Object.keys(validateRecord(row)).length > 0;
+
   Ane.parser = {
+    validateRecord,
+    hasIssues,
     fixOCRErrors,
     joinRecordLines,
     splitMultipleRecords,
