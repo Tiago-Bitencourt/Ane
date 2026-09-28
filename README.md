@@ -56,36 +56,42 @@ Esta é uma ferramenta desenvolvida especificamente para uso pessoal, que permit
 
 ```
 Ane/
-├── index.html      # Estrutura HTML da aplicação
-├── script.js       # Lógica JavaScript (classes e funções)
-├── style.css       # Estilos CSS
-└── README.md       # Documentação do projeto
+├── index.html          # Estrutura HTML da aplicação
+├── css/
+│   └── style.css       # Estilos (tokens de cor, tema claro/escuro, responsivo)
+├── js/
+│   ├── config.js       # Configurações, nomes de colunas e mensagens
+│   ├── parser.js       # Texto do OCR → registros (regex; sem DOM)
+│   ├── csv.js          # Leitura, preenchimento e escrita de CSV (sem DOM)
+│   ├── pdf-ocr.js      # PDF → texto, página a página (PDF.js + Tesseract.js)
+│   ├── view.js         # Renderização da interface (HTML sempre escapado)
+│   └── app.js          # Estado e eventos: liga os módulos à interface
+└── README.md
 ```
 
 ## 🏗️ Arquitetura do Código
 
-O código está organizado em classes com responsabilidades bem definidas:
+Scripts clássicos (sem build e sem módulos ES, para funcionar abrindo o `index.html` direto do disco), todos registrados no namespace global `Ane`:
 
-- **`PDFProcessor`**: Processa arquivos PDF e extrai texto usando OCR
-- **`DataExtractor`**: Extrai dados estruturados do texto usando expressões regulares
-- **`TableRenderer`**: Renderiza a interface de tabela e gerencia edições
-- **`CSVProcessor`**: Processa arquivos CSV e preenche com dados extraídos
-- **`UIManager`**: Gerencia interações da interface e coordena os componentes
-- **`Utils`**: Funções utilitárias reutilizáveis
-- **`Constants`**: Constantes centralizadas (padrões regex, mensagens, configurações)
+- **`Ane.parser`**: corrige erros comuns do OCR, junta linhas quebradas e extrai `{ sequence, id, sex, age, name }`
+- **`Ane.csv`**: detecta o separador (`,` ou `;`), preenche células vazias cruzando pelos últimos dígitos do ID e gera o CSV de saída
+- **`Ane.pdfOcr`**: renderiza cada página em canvas e aplica OCR, reportando o progresso
+- **`Ane.view`**: loader, tabela editável, abas e mensagens de status
+- **`Ane.config` / `Ane.messages`**: constantes centralizadas
+
+A ordem dos `<script>` no `index.html` importa: `config` → `parser` → `csv` → `pdf-ocr` → `view` → `app`.
 
 ## ⚙️ Configurações
 
-As configurações podem ser ajustadas no objeto `Constants.CONFIG`:
+As configurações ficam em `js/config.js`:
 
 ```javascript
-CONFIG: {
-  OCR_LANGUAGE: 'por',      // Idioma do OCR (português)
-  OCR_SCALE: 2.0,           // Escala para renderização do PDF
-  MAX_LOOKAHEAD: 30,        // Máximo de linhas para buscar dados
-  BACKUP_LOOKAHEAD: 25,     // Lookahead para busca de backup
-  ID_DIGITS: 5              // Número de dígitos do ID para matching
-}
+Ane.config = {
+  OCR_LANGUAGE: 'por',  // Idioma do OCR (português)
+  OCR_SCALE: 7.0,       // Escala de renderização da página antes do OCR
+  ID_DIGITS: 5,         // Dígitos finais do ID usados para cruzar PDF e CSV
+  PDFJS_WORKER_SRC: '…' // Worker do PDF.js (mesma versão da biblioteca)
+};
 ```
 
 ## 📝 Formato de Dados Esperado
@@ -112,6 +118,8 @@ O sistema procura automaticamente por colunas com os seguintes nomes:
 - **Sexo**: Qualquer coluna contendo "sexo" (case-insensitive)
 - **Idade**: Qualquer coluna contendo "idade" (case-insensitive)
 
+O separador (`,` ou `;`) é detectado automaticamente pelo cabeçalho e mantido no arquivo gerado. IDs com pontuação (ex.: `25.083.144`) são normalizados antes da comparação. Apenas células vazias são preenchidas, e as edições feitas na tabela são usadas no preenchimento.
+
 ## 🌐 Compatibilidade
 
 - Navegadores modernos (Chrome, Firefox, Safari, Edge)
@@ -123,6 +131,7 @@ O sistema procura automaticamente por colunas com os seguintes nomes:
 As seguintes bibliotecas são carregadas via CDN:
 
 - **PDF.js** (v3.11.174): `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js`
+  - Worker: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 - **Tesseract.js** (v5): `https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js`
 - **Font Awesome** (v6.4.0): `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`
 
