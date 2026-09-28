@@ -5,71 +5,93 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Extrator de Dados PDF</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
+  <main class="app">
+    <header class="app-header">
+      <h1><i class="fas fa-file-pdf"></i> Extrator de Dados PDF</h1>
+      <p>Leia a tabela de um PDF escaneado, revise os dados e preencha seu CSV automaticamente.</p>
+    </header>
 
-  <div class="container">
-
-    <div class="upload-sections-wrapper">
-      <div class="file-upload-section">
-        <h3>
-          <i class="fas fa-file-pdf"></i>
-          Extrair Dados do PDF
-        </h3>
-        <p>
-          <i class="fas fa-info-circle"></i>
-          Selecione um arquivo PDF para extrair os dados da tabela
-        </p>
-        <div class="file-input-wrapper">
-          <label for="pdfFile" class="file-input-label">
-            <i class="fas fa-upload"></i>
-            <span>Selecionar Arquivo PDF</span>
-          </label>
-          <input type="file" id="pdfFile" accept=".pdf">
+    <ol class="steps">
+      <li class="step" id="stepPdf" data-state="active">
+        <div class="step-header">
+          <span class="step-number" aria-hidden="true"><span>1</span><i class="fas fa-check"></i></span>
+          <div>
+            <h2>Enviar o PDF</h2>
+            <p>O texto é lido por OCR, página a página. Pode levar alguns segundos por página.</p>
+          </div>
         </div>
-        <div id="pdfStatus"></div>
-      </div>
-
-      <div class="csv-section">
-        <h3>
-          <i class="fas fa-file-csv"></i>
-          Preencher CSV
-        </h3>
-        <p>
-          <i class="fas fa-info-circle"></i>
-          Faça upload de um CSV e preencha automaticamente com os dados do PDF
-        </p>
-        <div class="file-input-wrapper">
-          <label for="csvFile" class="file-input-label">
-            <i class="fas fa-file-upload"></i>
-            <span>Selecionar Arquivo CSV</span>
-          </label>
-          <input type="file" id="csvFile" accept=".csv">
+        <div class="step-body">
+          <div class="dropzone" data-accept=".pdf">
+            <input type="file" id="pdfFile" class="visually-hidden" accept=".pdf,application/pdf">
+            <label for="pdfFile" class="dropzone-label">
+              <i class="fas fa-cloud-arrow-up"></i>
+              <span><strong>Clique para escolher</strong> ou arraste o PDF aqui</span>
+            </label>
+          </div>
+          <div id="pdfStatus" class="step-status"></div>
         </div>
-        <div id="csvStatus"></div>
-      </div>
-    </div>
+      </li>
 
-    <div class="process-section">
-      <button id="processCSVBtn" onclick="processCSV()" class="button button-success" disabled>
-        <i class="fas fa-magic"></i>
-        <span>Processar e Baixar CSV</span>
-      </button>
-      <p>
-        <i class="fas fa-info-circle"></i>
-        <span>Após selecionar o PDF e o CSV, clique aqui para processar</span>
-      </p>
-    </div>
-  </div>
+      <li class="step" id="stepReview" data-state="locked">
+        <div class="step-header">
+          <span class="step-number" aria-hidden="true"><span>2</span><i class="fas fa-check"></i></span>
+          <div>
+            <h2>Revisar os dados</h2>
+            <p>Confira os campos destacados e corrija clicando na célula. Enter confirma.</p>
+          </div>
+        </div>
+        <div class="step-body">
+          <div id="output" aria-live="polite">
+            <p class="step-placeholder">Os dados aparecem aqui depois que o PDF for processado.</p>
+          </div>
+        </div>
+      </li>
 
-  <div id="output"></div>
+      <li class="step" id="stepCsv" data-state="locked">
+        <div class="step-header">
+          <span class="step-number" aria-hidden="true"><span>3</span><i class="fas fa-check"></i></span>
+          <div>
+            <h2>Preencher o CSV</h2>
+            <p>O CSV precisa de uma coluna de ID. Somente as células vazias são preenchidas.</p>
+          </div>
+        </div>
+        <div class="step-body">
+          <div class="dropzone" data-accept=".csv">
+            <input type="file" id="csvFile" class="visually-hidden" accept=".csv,text/csv">
+            <label for="csvFile" class="dropzone-label">
+              <i class="fas fa-file-csv"></i>
+              <span><strong>Clique para escolher</strong> ou arraste o CSV aqui</span>
+            </label>
+          </div>
+          <div id="csvStatus" class="step-status"></div>
+          <div class="step-actions">
+            <button type="button" id="processCSVBtn" class="button" disabled>
+              <i class="fas fa-wand-magic-sparkles"></i> Preencher e baixar CSV
+            </button>
+            <button type="button" id="downloadTableBtn" class="button button-secondary" disabled>
+              <i class="fas fa-download"></i> Baixar só a tabela
+            </button>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </main>
 
-  <script src="script.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/csv.js"></script>
+  <script src="js/pdf-ocr.js"></script>
+  <script src="js/view.js"></script>
+  <script src="js/app.js"></script>
 </body>
 
 </html>

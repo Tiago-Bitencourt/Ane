@@ -15,33 +15,39 @@ Esta é uma ferramenta desenvolvida especificamente para uso pessoal, que permit
   - Idade
   - Nome
 - **Preenchimento Automático de CSV**: Preenche automaticamente arquivos CSV com os dados extraídos
+- **Revisão guiada**: Destaca campos vazios e valores suspeitos, com contador e filtro "só as linhas para revisar"
 - **Edição Inline**: Permite editar dados diretamente na tabela antes de exportar
-- **Interface Moderna**: Design responsivo e intuitivo com feedback visual
+- **Arrastar e soltar**: PDF e CSV podem ser arrastados para a página
+- **Exportar a tabela**: Baixa os dados extraídos como CSV (`;` + UTF-8 com BOM, pronto para o Excel)
 - **Visualização de Texto Bruto**: Permite visualizar o texto extraído do PDF para verificação
 - **Progresso em Tempo Real**: Mostra o progresso do processamento do PDF
 
 ## 🚀 Como Usar
 
-### 1. Extrair Dados do PDF
+A página é dividida em três passos; cada um é liberado quando o anterior termina.
 
-1. Clique em "Selecionar Arquivo PDF"
-2. Escolha o arquivo PDF que contém os dados
-3. Aguarde o processamento (o OCR pode levar alguns segundos)
-4. Visualize os dados extraídos na tabela
+### 1. Enviar o PDF
 
-### 2. Preencher CSV
+1. Clique na área do passo 1 ou arraste o PDF para ela
+2. Aguarde o processamento (o OCR leva alguns segundos por página)
+3. A página rola sozinha até os resultados
 
-1. Clique em "Selecionar Arquivo CSV"
-2. Escolha o arquivo CSV que deseja preencher
-3. Certifique-se de que o CSV contém uma coluna de ID (ex: "ID amost.", "ID", "Id", etc.)
-4. Clique em "Processar e Baixar CSV"
-5. O arquivo preenchido será baixado automaticamente
+### 2. Revisar os dados
 
-### 3. Editar Dados
+- O resumo no topo mostra quantas linhas precisam de revisão; marque "Mostrar só as linhas para revisar" para filtrá-las
+- Células **amarelas** estão vazias; células **vermelhas** têm valor suspeito — passe o mouse para ver o motivo:
+  - ID com quantidade de dígitos diferente de 5
+  - Sexo diferente de M, F ou N (ex.: `WF`)
+  - Idade fora de 1 a 120
+  - Nome com números ou símbolos (sinal de duas linhas coladas pelo OCR)
+- Linhas que o OCR não conseguiu separar mostram o texto original logo abaixo
+- Clique em qualquer célula (exceto #) para editar; Enter confirma. As edições são usadas no CSV
 
-- Clique em qualquer célula da tabela (exceto a coluna #) para editar
-- Pressione Enter para confirmar a edição
-- Os dados editados serão salvos automaticamente
+### 3. Preencher o CSV
+
+1. Clique na área do passo 3 ou arraste o CSV (precisa ter uma coluna de ID, ex.: "ID amost.", "ID")
+2. Clique em "Preencher e baixar CSV" — o arquivo `<nome>_preenchido.csv` é baixado
+3. Ou use "Baixar só a tabela" para exportar apenas os dados extraídos
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -56,36 +62,42 @@ Esta é uma ferramenta desenvolvida especificamente para uso pessoal, que permit
 
 ```
 Ane/
-├── index.html      # Estrutura HTML da aplicação
-├── script.js       # Lógica JavaScript (classes e funções)
-├── style.css       # Estilos CSS
-└── README.md       # Documentação do projeto
+├── index.html          # Estrutura HTML da aplicação
+├── css/
+│   └── style.css       # Estilos (tokens de cor, tema claro/escuro, responsivo)
+├── js/
+│   ├── config.js       # Configurações, nomes de colunas e mensagens
+│   ├── parser.js       # Texto do OCR → registros (regex; sem DOM)
+│   ├── csv.js          # Leitura, preenchimento e escrita de CSV (sem DOM)
+│   ├── pdf-ocr.js      # PDF → texto, página a página (PDF.js + Tesseract.js)
+│   ├── view.js         # Renderização da interface (HTML sempre escapado)
+│   └── app.js          # Estado e eventos: liga os módulos à interface
+└── README.md
 ```
 
 ## 🏗️ Arquitetura do Código
 
-O código está organizado em classes com responsabilidades bem definidas:
+Scripts clássicos (sem build e sem módulos ES, para funcionar abrindo o `index.html` direto do disco), todos registrados no namespace global `Ane`:
 
-- **`PDFProcessor`**: Processa arquivos PDF e extrai texto usando OCR
-- **`DataExtractor`**: Extrai dados estruturados do texto usando expressões regulares
-- **`TableRenderer`**: Renderiza a interface de tabela e gerencia edições
-- **`CSVProcessor`**: Processa arquivos CSV e preenche com dados extraídos
-- **`UIManager`**: Gerencia interações da interface e coordena os componentes
-- **`Utils`**: Funções utilitárias reutilizáveis
-- **`Constants`**: Constantes centralizadas (padrões regex, mensagens, configurações)
+- **`Ane.parser`**: corrige erros comuns do OCR, junta linhas quebradas e extrai `{ sequence, id, sex, age, name }`
+- **`Ane.csv`**: detecta o separador (`,` ou `;`), preenche células vazias cruzando pelos últimos dígitos do ID e gera o CSV de saída
+- **`Ane.pdfOcr`**: renderiza cada página em canvas e aplica OCR, reportando o progresso
+- **`Ane.view`**: loader, tabela editável, abas e mensagens de status
+- **`Ane.config` / `Ane.messages`**: constantes centralizadas
+
+A ordem dos `<script>` no `index.html` importa: `config` → `parser` → `csv` → `pdf-ocr` → `view` → `app`.
 
 ## ⚙️ Configurações
 
-As configurações podem ser ajustadas no objeto `Constants.CONFIG`:
+As configurações ficam em `js/config.js`:
 
 ```javascript
-CONFIG: {
-  OCR_LANGUAGE: 'por',      // Idioma do OCR (português)
-  OCR_SCALE: 2.0,           // Escala para renderização do PDF
-  MAX_LOOKAHEAD: 30,        // Máximo de linhas para buscar dados
-  BACKUP_LOOKAHEAD: 25,     // Lookahead para busca de backup
-  ID_DIGITS: 5              // Número de dígitos do ID para matching
-}
+Ane.config = {
+  OCR_LANGUAGE: 'por',  // Idioma do OCR (português)
+  OCR_SCALE: 7.0,       // Escala de renderização da página antes do OCR
+  ID_DIGITS: 5,         // Dígitos finais do ID usados para cruzar PDF e CSV
+  PDFJS_WORKER_SRC: '…' // Worker do PDF.js (mesma versão da biblioteca)
+};
 ```
 
 ## 📝 Formato de Dados Esperado
@@ -112,6 +124,8 @@ O sistema procura automaticamente por colunas com os seguintes nomes:
 - **Sexo**: Qualquer coluna contendo "sexo" (case-insensitive)
 - **Idade**: Qualquer coluna contendo "idade" (case-insensitive)
 
+O separador (`,` ou `;`) é detectado automaticamente pelo cabeçalho e mantido no arquivo gerado. IDs com pontuação (ex.: `25.083.144`) são normalizados antes da comparação. Apenas células vazias são preenchidas, e as edições feitas na tabela são usadas no preenchimento.
+
 ## 🌐 Compatibilidade
 
 - Navegadores modernos (Chrome, Firefox, Safari, Edge)
@@ -123,16 +137,16 @@ O sistema procura automaticamente por colunas com os seguintes nomes:
 As seguintes bibliotecas são carregadas via CDN:
 
 - **PDF.js** (v3.11.174): `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js`
+  - Worker: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 - **Tesseract.js** (v5): `https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js`
 - **Font Awesome** (v6.4.0): `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`
 
 ## 🎨 Características de Design
 
-- Design moderno com gradientes e animações suaves
-- Suporte a modo escuro (baseado nas preferências do sistema)
-- Interface responsiva para diferentes tamanhos de tela
-- Feedback visual claro para todas as ações
-- Indicadores de progresso durante o processamento
+- Fluxo em passos numerados, com estado (bloqueado / atual / concluído)
+- Visual limpo: superfícies lisas, roxo apenas como cor de destaque, largura máxima de 960px
+- Tema claro e escuro (seguem a preferência do sistema), com contraste verificado nos dois
+- Responsivo, com navegação por teclado e respeito a "reduzir movimento" do sistema
 
 ## ⚠️ Limitações
 
