@@ -67,7 +67,7 @@
   // Preenche somente células vazias. Retorna null se não houver coluna de ID.
   function fill(csv, records) {
     const { headers, rows } = csv;
-    const { ID_NAMES, NAME_KEYWORD, SEX_KEYWORD, AGE_KEYWORD } = Ane.csvColumns;
+    const { ID_NAMES, NAME_KEYWORD, SEX_KEYWORD, AGE_KEYWORD } = Ane.csvColumns;  
 
     const idIdx = headers.findIndex((h) => ID_NAMES.includes(h));
     if (idIdx === -1) return null;
@@ -80,7 +80,8 @@
     };
     const targets = [
       [columnWith(NAME_KEYWORD), 'name'],
-      [columnWith(AGE_KEYWORD), 'age']
+      [columnWith(AGE_KEYWORD), 'age'],
+      [columnWith(SEX_KEYWORD), 'sex']
     ].filter(([col]) => col !== -1);
 
     const index = indexRecordsById(records);
