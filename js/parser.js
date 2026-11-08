@@ -1,4 +1,4 @@
-// Converte o texto bruto do OCR em registros { sequence, id, sex, age, name }.
+// Converte o texto bruto do PDF/OCR em registros { sequence, id, sex, age, name }.
 // Módulo puro: não depende do DOM.
 (function (Ane) {
   'use strict';
@@ -116,8 +116,59 @@
     return [sequence, id, sex, age, (name || '').replace(/;/g, ',')].join(';');
   }
 
-  // Linhas não reconhecidas são mantidas (vazias) para o usuário corrigir manualmente.
-  function extractRecords(text) {
+  // ---------------------------------------------------------------------------
+  // Mapa por paciente (formato novo): Codigo|Nome|Idade|Sexo no cabeçalho.
+  // Campos riscados do hemograma (VCM, blastos, linfócitos, observações…) são ignorados.
+  // ---------------------------------------------------------------------------
+
+  const MAPA_HEADER = /Codigo\s*:\s*([A-Za-z0-9\-]+)\s*\|?\s*Nome\s*:\s*((?:(?!Codigo\s*:).)+?)\s*\|?\s*Idade\s*:\s*([^\s|]+)\s*\|?\s*(?:Sexo\s*:\s*([A-Za-z]+))?/gi;
+
+  function parseAgeYears(raw) {
+    const text = String(raw || '').trim();
+    const withUnit = text.match(/(\d+)\s*a/i);
+    if (withUnit) return withUnit[1];
+    const digits = text.match(/^(\d+)/);
+    return digits ? digits[1] : '';
+  }
+
+  function parseSex(raw) {
+    const match = String(raw || '').trim().toUpperCase().match(/[MFN]/);
+    return match ? match[0] : '';
+  }
+
+  function parseMapaHeader(codigo, nome, idade, sexo, rawLine) {
+    return {
+      sequence: '',
+      id: normalizeId(codigo),
+      sex: parseSex(sexo),
+      age: parseAgeYears(idade),
+      name: String(nome || '').replace(/\s+/g, ' ').trim(),
+      rawLine
+    };
+  }
+
+  function extractMapaRecords(text) {
+    const rows = [];
+    const seen = new Set();
+    const source = String(text || '').replace(/\r/g, '').replace(/\n+/g, ' ');
+    let match;
+
+    MAPA_HEADER.lastIndex = 0;
+    while ((match = MAPA_HEADER.exec(source)) !== null) {
+      const record = parseMapaHeader(match[1], match[2].replace(/\|$/g, ''), match[3], match[4], match[0]);
+      if (!record.id || seen.has(record.id)) continue;
+      seen.add(record.id);
+      record.sequence = String(rows.length + 1);
+      rows.push(record);
+    }
+
+    return {
+      rows,
+      standardLines: rows.map(toStandardFormat)
+    };
+  }
+
+  function extractTableRecords(text) {
     const rows = [];
     const standardLines = [];
 
@@ -135,6 +186,13 @@
     }
 
     return { rows, standardLines };
+  }
+
+  // Linhas não reconhecidas são mantidas (vazias) para o usuário corrigir manualmente.
+  function extractRecords(text) {
+    const mapa = extractMapaRecords(text);
+    if (mapa.rows.length) return mapa;
+    return extractTableRecords(text);
   }
 
   // Regras de revisão: retornam a mensagem do problema ou null se o valor parece correto.
@@ -166,6 +224,9 @@
     splitMultipleRecords,
     parseRecord,
     normalizeId,
+    parseAgeYears,
+    parseSex,
+    extractMapaRecords,
     toStandardFormat,
     extractRecords
   };

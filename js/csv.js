@@ -72,10 +72,14 @@
     const idIdx = headers.findIndex((h) => ID_NAMES.includes(h));
     if (idIdx === -1) return null;
 
-    const columnWith = (keyword) => headers.findIndex((h) => h.toLowerCase().includes(keyword));
+    const lower = headers.map((h) => h.toLowerCase());
+    const columnWith = (keyword) => {
+      const exact = lower.findIndex((h) => h === keyword);
+      if (exact !== -1) return exact;
+      return lower.findIndex((h) => h.includes(keyword) && !h.includes('unidade'));
+    };
     const targets = [
       [columnWith(NAME_KEYWORD), 'name'],
-      [columnWith(SEX_KEYWORD), 'sex'],
       [columnWith(AGE_KEYWORD), 'age']
     ].filter(([col]) => col !== -1);
 
