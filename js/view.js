@@ -56,7 +56,7 @@
     output.innerHTML = html`
       <div class="loader">
         <i class="fas fa-circle-notch fa-spin loader-icon"></i>
-        <div class="loader-title">Preparando o OCR...</div>
+        <div class="loader-title">Lendo o PDF...</div>
         <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-bar"></div>
         </div>
@@ -162,7 +162,7 @@
       </div>
 
       <div data-panel="standard" class="tab-content">
-        <p class="panel-hint">Formato: <code>#;id;sexo;idade;nome</code></p>
+        <p class="panel-hint">Formato: <code>#;id;idade;nome</code></p>
         <div class="unified-lines">${standardLines(lines)}</div>
       </div>
 

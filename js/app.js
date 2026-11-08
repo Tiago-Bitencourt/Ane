@@ -133,7 +133,7 @@
     // ";" e BOM para abrir corretamente (com acentos) no Excel em português.
     function onDownloadTable() {
       if (!state.extracted) return;
-      const rows = state.extracted.rows.map((r) => [r.sequence, r.id, r.sex, r.age, r.name]);
+      const rows = state.extracted.rows.map((r) => [r.sequence, r.id, r.age, r.name]);
       downloadFile(
         csv.stringify({ headers: [...Ane.tableHeaders], rows, delimiter: ';', hasBom: true }),
         'dados_extraidos.csv'
